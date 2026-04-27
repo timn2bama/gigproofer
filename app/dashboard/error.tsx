@@ -16,12 +16,16 @@ export default function DashboardError({
   }, [error])
 
   return (
-    <div className="flex h-[50vh] flex-col items-center justify-center gap-4">
-      <div className="space-y-2 text-center">
-        <h2 className="text-2xl font-bold tracking-tight">Something went wrong!</h2>
-        <p className="text-muted-foreground">We encountered an error loading your dashboard.</p>
-      </div>
-      <Button onClick={() => reset()}>Try again</Button>
+    <div className="flex h-[50vh] w-full flex-col items-center justify-center gap-4">
+      <h2 className="text-xl font-semibold">Something went wrong!</h2>
+      <Button
+        onClick={
+          // Attempt to recover by trying to re-render the segment
+          () => reset()
+        }
+      >
+        Try again
+      </Button>
     </div>
   )
 }

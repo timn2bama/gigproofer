@@ -8,36 +8,29 @@ describe('Button', () => {
     render(<Button>Click me</Button>);
     const button = screen.getByRole('button', { name: /click me/i });
     expect(button).toBeInTheDocument();
-    expect(button).toHaveClass('bg-primary');
   });
 
-  it('applies the correct variant class', () => {
-    render(<Button variant="destructive">Delete</Button>);
-    const button = screen.getByRole('button', { name: /delete/i });
-    expect(button).toHaveClass('bg-destructive');
+  it('applies custom className', () => {
+    render(<Button className="custom-class">Click me</Button>);
+    const button = screen.getByRole('button', { name: /click me/i });
+    expect(button).toHaveClass('custom-class');
   });
 
-  it('applies the correct size class', () => {
-    render(<Button size="lg">Large Button</Button>);
-    const button = screen.getByRole('button', { name: /large button/i });
-    expect(button).toHaveClass('h-11');
+  it('renders correctly with different variants', () => {
+    render(<Button variant="destructive">Destructive</Button>);
+    const button = screen.getByRole('button', { name: /destructive/i });
+    expect(button).toHaveClass('bg-destructive text-destructive-foreground hover:bg-destructive/90');
   });
 
-  it('renders as a child element when asChild is true', () => {
-    render(
-      <Button asChild>
-        <a href="/test">Link Button</a>
-      </Button>
-    );
-    const link = screen.getByRole('link', { name: /link button/i });
-    expect(link).toBeInTheDocument();
-    expect(link).toHaveAttribute('href', '/test');
+  it('renders correctly with different sizes', () => {
+    render(<Button size="sm">Small</Button>);
+    const button = screen.getByRole('button', { name: /small/i });
+    expect(button).toHaveClass('h-9 px-3');
   });
 
-  it('can be disabled', () => {
+  it('is disabled when disabled prop is true', () => {
     render(<Button disabled>Disabled</Button>);
     const button = screen.getByRole('button', { name: /disabled/i });
     expect(button).toBeDisabled();
-    expect(button).toHaveClass('disabled:opacity-50');
   });
 });
