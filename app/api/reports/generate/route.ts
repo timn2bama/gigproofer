@@ -1,0 +1,204 @@
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth-options';
+import { prisma } from '@/lib/db';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { generatePresignedUploadUrl } from '@/lib/s3';
+
+export const dynamic = 'force-dynamic';
+
+export async function POST(request: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const userId = (session.user as any).id;
+
+    // Check subscription
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { subscriptionStatus: true, name: true, email: true },
+    });
+
+    if (user?.subscriptionStatus !== 'active') {
+      return NextResponse.json(
+        { error: 'Active subscription required' },
+        { status: 403 }
+      );
+    }
+
+    // Fetch income records
+    const incomeRecords = await prisma.incomeRecord.findMany({
+      where: { userId },
+      orderBy: { date: 'desc' },
+    });
+
+    if (incomeRecords.length === 0) {
+      return NextResponse.json(
+        { error: 'No income records found' },
+        { status: 400 }
+      );
+    }
+
+    // Calculate statistics
+    const totalIncome = incomeRecords.reduce((sum, r) => sum + r.amount, 0);
+    const recordCount = incomeRecords.length;
+    const months = Math.max(1, recordCount / 4); // Assume ~4 records per month
+    const averageMonthly = totalIncome / months;
+
+    // Calculate consistency score (simple variance-based)
+    const monthlyTotals: number[] = [];
+    const monthlyMap = new Map<string, number>();
+    
+    incomeRecords.forEach(record => {
+      const monthKey = `${record.date.getFullYear()}-${record.date.getMonth()}`;
+      monthlyMap.set(monthKey, (monthlyMap.get(monthKey) ?? 0) + record.amount);
+    });
+    
+    monthlyMap.forEach(total => monthlyTotals.push(total));
+    
+    const avgMonthly = monthlyTotals.reduce((a, b) => a + b, 0) / monthlyTotals.length;
+    const variance = monthlyTotals.reduce((sum, val) => sum + Math.pow(val - avgMonthly, 2), 0) / monthlyTotals.length;
+    const stdDev = Math.sqrt(variance);
+    const consistencyScore = Math.max(0, Math.min(1, 1 - (stdDev / avgMonthly)));
+
+    // Platform breakdown
+    const platformStats = incomeRecords.reduce((acc, record) => {
+      acc[record.platform] = (acc[record.platform] ?? 0) + record.amount;
+      return acc;
+    }, {} as Record<string, number>);
+
+    // Generate PDF
+    const doc = new jsPDF();
+
+    // Header
+    doc.setFontSize(20);
+    doc.setTextColor(37, 99, 235); // Blue
+    doc.text('GigProofer', 14, 20);
+    
+    doc.setFontSize(16);
+    doc.setTextColor(0, 0, 0);
+    doc.text('Income Verification Report', 14, 30);
+
+    // Report Info
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 40);
+    doc.text(`Report ID: ${Date.now()}`, 14, 45);
+    
+    doc.setFontSize(11);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Worker: ${user.name ?? 'N/A'}`, 14, 55);
+    doc.text(`Email: ${user.email ?? 'N/A'}`, 14, 60);
+
+    // Summary Section
+    doc.setFontSize(14);
+    doc.text('Income Summary', 14, 75);
+    
+    doc.setFontSize(11);
+    const summaryY = 85;
+    doc.text(`Total Income: $${totalIncome.toFixed(2)}`, 14, summaryY);
+    doc.text(`Average Monthly: $${averageMonthly.toFixed(2)}`, 14, summaryY + 7);
+    doc.text(`Consistency Score: ${(consistencyScore * 100).toFixed(0)}%`, 14, summaryY + 14);
+    doc.text(`Total Records: ${recordCount}`, 14, summaryY + 21);
+
+    // Platform Breakdown
+    doc.setFontSize(14);
+    doc.text('Platform Breakdown', 14, 125);
+    
+    const platformData = Object.entries(platformStats).map(([platform, amount]) => [
+      platform,
+      `$${amount.toFixed(2)}`,
+      `${((amount / totalIncome) * 100).toFixed(1)}%`,
+    ]);
+
+    autoTable(doc, {
+      startY: 133,
+      head: [['Platform', 'Amount', 'Percentage']],
+      body: platformData,
+      theme: 'grid',
+      headStyles: { fillColor: [37, 99, 235] },
+    });
+
+    // Income History Table
+    const finalY = (doc as any).lastAutoTable?.finalY ?? 160;
+    doc.setFontSize(14);
+    doc.text('Recent Income Records', 14, finalY + 15);
+
+    const tableData = incomeRecords.slice(0, 20).map(record => [
+      new Date(record.date).toLocaleDateString(),
+      record.platform,
+      record.paymentType ?? '-',
+      `$${record.amount.toFixed(2)}`,
+    ]);
+
+    autoTable(doc, {
+      startY: finalY + 23,
+      head: [['Date', 'Platform', 'Type', 'Amount']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [37, 99, 235] },
+    });
+
+    // Footer
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(9);
+      doc.setTextColor(150);
+      doc.text(
+        'This report is generated by GigProofer for income verification purposes.',
+        14,
+        doc.internal.pageSize.height - 10
+      );
+    }
+
+    // Convert PDF to buffer
+    const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+    const fileName = `report-${userId}-${Date.now()}.pdf`;
+
+    // Upload to S3
+    const { uploadUrl, cloud_storage_path } = await generatePresignedUploadUrl(
+      fileName,
+      'application/pdf',
+      false
+    );
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/pdf' },
+      body: pdfBuffer,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error('Failed to upload PDF');
+    }
+
+    // Create report record
+    const report = await prisma.verificationReport.create({
+      data: {
+        userId,
+        cloudStoragePath: cloud_storage_path,
+        totalIncome,
+        averageMonthly,
+        consistencyScore,
+        reportData: {
+          recordCount,
+          platformStats,
+          generatedDate: new Date().toISOString(),
+        },
+      },
+    });
+
+    return NextResponse.json({ report });
+  } catch (error) {
+    console.error('Report generation error:', error);
+    return NextResponse.json(
+      { error: 'Failed to generate report' },
+      { status: 500 }
+    );
+  }
+}

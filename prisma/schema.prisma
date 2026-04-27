@@ -1,0 +1,151 @@
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+    output = "/home/ubuntu/gigproofer/nextjs_space/node_modules/.prisma/client"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id                   String                @id @default(cuid())
+  name                 String?
+  email                String?               @unique
+  emailVerified        DateTime?
+  image                String?
+  password             String?
+  role                 String                @default("Worker") // Worker or Lender
+  subscriptionStatus   String                @default("inactive") // active, inactive, cancelled
+  createdAt            DateTime              @default(now())
+  accounts             Account[]
+  sessions             Session[]
+  documents            Document[]
+  incomeRecords        IncomeRecord[]
+  verificationReports  VerificationReport[]
+  subscription         Subscription?
+  fundedLoansAsLender  FundedLoan[]          @relation("LenderLoans")
+  fundedLoansAsWorker  FundedLoan[]          @relation("WorkerLoans")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Document {
+  id               String          @id @default(cuid())
+  userId           String
+  filename         String
+  cloudStoragePath String          // S3 key
+  isPublic         Boolean         @default(false)
+  platform         String          // Uber, Lyft, DoorDash, Instacart, Other
+  uploadDate       DateTime        @default(now())
+  processingStatus String          @default("pending") // pending, processing, completed, failed
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  incomeRecords    IncomeRecord[]
+}
+
+model IncomeRecord {
+  id          String    @id @default(cuid())
+  userId      String
+  documentId  String?
+  date        DateTime
+  amount      Float
+  platform    String    // Uber, Lyft, DoorDash, Instacart, Other
+  paymentType String?   // weekly, daily, tips, bonus, etc.
+  extractedAt DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document    Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([userId, date])
+  @@index([platform])
+}
+
+model VerificationReport {
+  id                 String        @id @default(cuid())
+  userId             String
+  generatedAt        DateTime      @default(now())
+  cloudStoragePath   String        // S3 key for the generated PDF
+  isPublic           Boolean       @default(false)
+  sharedWithLenders  Boolean       @default(false)
+  totalIncome        Float
+  averageMonthly     Float
+  consistencyScore   Float
+  reportData         Json          // Store detailed report data
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fundedLoans        FundedLoan[]
+
+  @@index([userId, generatedAt])
+}
+
+model Subscription {
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  stripeSubscriptionId String    @unique
+  stripeCustomerId     String
+  status               String    // active, cancelled, past_due, incomplete
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([stripeSubscriptionId])
+  @@index([stripeCustomerId])
+}
+
+model FundedLoan {
+  id                String              @id @default(cuid())
+  reportId          String
+  report            VerificationReport  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  lenderId          String
+  lender            User                @relation("LenderLoans", fields: [lenderId], references: [id], onDelete: Cascade)
+  workerId          String
+  worker            User                @relation("WorkerLoans", fields: [workerId], references: [id], onDelete: Cascade)
+  loanAmount        Float
+  commissionAmount  Float               // $25-$50 per loan
+  status            String              @default("pending") // pending, paid
+  fundedDate        DateTime
+  paidDate          DateTime?
+  notes             String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([lenderId])
+  @@index([workerId])
+  @@index([reportId])
+  @@index([status])
+}
