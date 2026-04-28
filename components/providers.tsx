@@ -3,6 +3,7 @@
 import { SessionProvider } from 'next-auth/react';
 import { ThemeProvider } from './theme-provider';
 import { useEffect, useState } from 'react';
+import { Toaster } from '@/components/ui/sonner';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
@@ -24,6 +25,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         disableTransitionOnChange
       >
         {children}
+        <Toaster />
       </ThemeProvider>
     </SessionProvider>
   );
