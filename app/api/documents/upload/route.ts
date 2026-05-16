@@ -13,8 +13,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const userId = (session.user as any).id;
+    const userId = session.user.id;
     const { cloud_storage_path, filename, platform } = await request.json();
+
+    // Validate platform to prevent LLM prompt injection
+    const VALID_PLATFORMS = ['Uber', 'Lyft', 'DoorDash', 'Instacart', 'Grubhub', 'Amazon Flex', 'Shipt', 'TaskRabbit', 'Other'];
+    if (!VALID_PLATFORMS.includes(platform)) {
+      return NextResponse.json({ error: 'Invalid platform' }, { status: 400 });
+    }
+
+    // Validate MIME type via file extension (server-side enforcement)
+    const VALID_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'heic'];
+    const fileExtension = (filename as string)?.split('.').pop()?.toLowerCase() ?? '';
+    if (!VALID_EXTENSIONS.includes(fileExtension)) {
+      return NextResponse.json(
+        { error: 'Invalid file type. Only PDF, JPEG, PNG, and HEIC files are allowed.' },
+        { status: 400 }
+      );
+    }
 
     // Check subscription status
     const user = await prisma.user.findUnique({
@@ -41,7 +57,14 @@ export async function POST(request: Request) {
     });
 
     // Process document asynchronously
-    processDocumentAsync(document.id, cloud_storage_path, userId, platform);
+    processDocumentAsync(document.id, cloud_storage_path, userId, platform)
+      .catch(async (err) => {
+        console.error(`Document processing failed for ${document.id}:`, err);
+        await prisma.document.update({
+          where: { id: document.id },
+          data: { processingStatus: 'failed' },
+        }).catch(() => {}); // best-effort status update
+      });
 
     return NextResponse.json({ document });
   } catch (error) {

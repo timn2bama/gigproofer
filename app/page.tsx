@@ -24,7 +24,7 @@ export default async function HomePage() {
   const session = await getServerSession(authOptions);
 
   if (session) {
-    if ((session.user as any).role === 'Lender') {
+    if (session.user.role === 'Lender') {
       redirect('/lender/dashboard');
     } else {
       redirect('/dashboard');

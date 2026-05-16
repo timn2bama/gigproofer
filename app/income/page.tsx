@@ -13,7 +13,7 @@ export default async function IncomePage() {
     redirect('/login');
   }
 
-  const userId = (session.user as any).id;
+  const userId = session.user.id;
 
   const incomeRecords = await prisma.incomeRecord.findMany({
     where: { userId },

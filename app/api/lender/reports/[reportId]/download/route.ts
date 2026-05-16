@@ -12,10 +12,11 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || (session.user as any).role !== 'Lender') {
+    if (!session || session.user.role !== 'Lender') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const lenderId = session.user.id;
     const reportId = params.reportId;
 
     const report = await prisma.verificationReport.findUnique({
@@ -24,6 +25,18 @@ export async function GET(
 
     if (!report) {
       return NextResponse.json({ error: 'Report not found' }, { status: 404 });
+    }
+
+    // Verify the lender has funded a loan for the worker who owns this report
+    const fundedLoan = await prisma.fundedLoan.findFirst({
+      where: {
+        lenderId,
+        workerId: report.userId,
+      },
+    });
+
+    if (!fundedLoan) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const url = await getFileUrl(report.cloudStoragePath, report.isPublic);

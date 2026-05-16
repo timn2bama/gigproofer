@@ -13,7 +13,7 @@ export default async function DashboardPage() {
     redirect('/login');
   }
 
-  const userId = (session.user as any).id;
+  const userId = session.user.id;
 
   // Fetch user data
   const user = await prisma.user.findUnique({

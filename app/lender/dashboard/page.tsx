@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export default async function LenderDashboardPage() {
   const session = await getServerSession(authOptions);
 
-  if (!session || (session.user as any).role !== 'Lender') {
+  if (!session || session.user.role !== 'Lender') {
     redirect('/login');
   }
 

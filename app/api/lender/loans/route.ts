@@ -12,8 +12,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const userRole = (session.user as any).role;
-    const userId = (session.user as any).id;
+    const userRole = session.user.role;
+    const userId = session.user.id;
 
     if (userRole !== 'Lender') {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
@@ -81,8 +81,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const userRole = (session.user as any).role;
-    const lenderId = (session.user as any).id;
+    const userRole = session.user.role;
+    const lenderId = session.user.id;
 
     if (userRole !== 'Lender') {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
@@ -107,13 +107,55 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify the report exists and get the worker ID
-    const report = await prisma.verificationReport.findUnique({
-      where: { id: reportId },
-      select: { userId: true },
+    // Verify the report exists and create the funded loan atomically
+    let report: { userId: string } | null = null;
+    const fundedLoan = await prisma.$transaction(async (tx) => {
+      // Verify the report exists and get the worker ID
+      report = await tx.verificationReport.findUnique({
+        where: { id: reportId },
+        select: { userId: true },
+      });
+
+      if (!report) {
+        throw new Error('REPORT_NOT_FOUND');
+      }
+
+      // Create the funded loan record
+      return tx.fundedLoan.create({
+        data: {
+          reportId,
+          lenderId,
+          workerId: report.userId,
+          loanAmount,
+          commissionAmount,
+          fundedDate: new Date(fundedDate),
+          notes,
+          status: 'pending',
+        },
+        include: {
+          worker: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+          report: {
+            select: {
+              id: true,
+              totalIncome: true,
+              averageMonthly: true,
+              consistencyScore: true,
+            },
+          },
+        },
+      });
+    }).catch((err) => {
+      if (err.message === 'REPORT_NOT_FOUND') return null;
+      throw err;
     });
 
-    if (!report) {
+    if (!fundedLoan) {
       return NextResponse.json(
         { error: 'Verification report not found' },
         { status: 404 }
@@ -124,37 +166,6 @@ export async function POST(request: Request) {
     const lender = await prisma.user.findUnique({
       where: { id: lenderId },
       select: { name: true, email: true },
-    });
-
-    // Create the funded loan record
-    const fundedLoan = await prisma.fundedLoan.create({
-      data: {
-        reportId,
-        lenderId,
-        workerId: report.userId,
-        loanAmount,
-        commissionAmount,
-        fundedDate: new Date(fundedDate),
-        notes,
-        status: 'pending',
-      },
-      include: {
-        worker: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-        report: {
-          select: {
-            id: true,
-            totalIncome: true,
-            averageMonthly: true,
-            consistencyScore: true,
-          },
-        },
-      },
     });
 
     // Send admin notification for funded loan commission

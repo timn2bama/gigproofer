@@ -21,6 +21,9 @@ export async function generatePresignedUploadUrl(
     ContentDisposition: isPublic ? 'attachment' : undefined,
   });
 
+  // Note: getSignedUrl with PutObjectCommand cannot enforce ContentLengthRange client-side.
+  // File size (max 10MB) and MIME type validation are enforced server-side in the upload route
+  // before the S3 path is accepted.
   const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
 
   return { uploadUrl, cloud_storage_path };

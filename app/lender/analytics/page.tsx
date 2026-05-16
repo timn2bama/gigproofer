@@ -10,7 +10,7 @@ export default async function LenderAnalyticsPage() {
     redirect('/login');
   }
 
-  const userRole = (session.user as any).role;
+  const userRole = session.user.role;
 
   if (userRole !== 'Lender') {
     redirect('/dashboard');

@@ -11,7 +11,12 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const userId = (session.user as any).id;
+    const userRole = session.user.role;
+    if (userRole !== 'Lender' && userRole !== 'Admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const userId = session.user.id;
 
     // Get all funded loans
     const allLoans = await prisma.fundedLoan.findMany({
