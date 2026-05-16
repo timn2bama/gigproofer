@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: Request,
-  { params }: { params: { reportId: string } }
+  { params }: { params: Promise<{ reportId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -17,7 +17,7 @@ export async function GET(
     }
 
     const lenderId = session.user.id;
-    const reportId = params.reportId;
+    const { reportId } = await params;
 
     const report = await prisma.verificationReport.findUnique({
       where: { id: reportId },

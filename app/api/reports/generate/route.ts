@@ -170,7 +170,7 @@ export async function POST(request: Request) {
     const uploadResponse = await fetch(uploadUrl, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/pdf' },
-      body: pdfBuffer,
+      body: new Uint8Array(pdfBuffer),
     });
 
     if (!uploadResponse.ok) {
