@@ -1,0 +1,9 @@
+.env
+.env.local
+*.test.ts
+*.test.tsx
+*.spec.ts
+__tests__/
+coverage/
+.eslintrc*
+README.md
