@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/db';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { generatePresignedUploadUrl } from '@/lib/s3';
+import { uploadFile } from '@/lib/blob';
 
 export const dynamic = 'force-dynamic';
 
@@ -160,28 +160,12 @@ export async function POST(request: Request) {
     const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
     const fileName = `report-${userId}-${Date.now()}.pdf`;
 
-    // Upload to S3
-    const { uploadUrl, cloud_storage_path } = await generatePresignedUploadUrl(
-      fileName,
-      'application/pdf',
-      false
-    );
+    const { url: blobUrl } = await uploadFile(fileName, pdfBuffer, 'application/pdf');
 
-    const uploadResponse = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/pdf' },
-      body: new Uint8Array(pdfBuffer),
-    });
-
-    if (!uploadResponse.ok) {
-      throw new Error('Failed to upload PDF');
-    }
-
-    // Create report record
     const report = await prisma.verificationReport.create({
       data: {
         userId,
-        cloudStoragePath: cloud_storage_path,
+        cloudStoragePath: blobUrl,
         totalIncome,
         averageMonthly,
         consistencyScore,

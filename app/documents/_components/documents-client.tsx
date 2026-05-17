@@ -53,59 +53,18 @@ export function DocumentsClient({ subscriptionStatus, documents }: Props) {
 
     try {
       for (const file of Array.from(files)) {
-        // Generate presigned URL
-        const presignedResponse = await fetch('/api/upload/presigned', {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('platform', selectedPlatform);
+
+        const response = await fetch('/api/documents/upload', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fileName: file.name,
-            contentType: file.type,
-            isPublic: false,
-          }),
+          body: formData,
         });
 
-        if (!presignedResponse.ok) {
-          throw new Error('Failed to get upload URL');
-        }
-
-        const { uploadUrl, cloud_storage_path } = await presignedResponse.json();
-
-        // Check if Content-Disposition header is required
-        const urlObj = new URL(uploadUrl);
-        const signedHeaders = urlObj.searchParams.get('X-Amz-SignedHeaders');
-        const needsContentDisposition = signedHeaders?.includes('content-disposition');
-
-        // Upload file to S3
-        const uploadHeaders: HeadersInit = {
-          'Content-Type': file.type,
-        };
-        if (needsContentDisposition) {
-          uploadHeaders['Content-Disposition'] = 'attachment';
-        }
-
-        const uploadResponse = await fetch(uploadUrl, {
-          method: 'PUT',
-          headers: uploadHeaders,
-          body: file,
-        });
-
-        if (!uploadResponse.ok) {
-          throw new Error('Failed to upload file');
-        }
-
-        // Complete upload and process document
-        const completeResponse = await fetch('/api/documents/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cloud_storage_path,
-            filename: file.name,
-            platform: selectedPlatform,
-          }),
-        });
-
-        if (!completeResponse.ok) {
-          throw new Error('Failed to save document');
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || 'Failed to upload document');
         }
       }
 

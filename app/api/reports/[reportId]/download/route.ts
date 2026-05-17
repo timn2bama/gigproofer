@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/db';
-import { getFileUrl } from '@/lib/s3';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,24 +19,17 @@ export async function GET(
     const { reportId } = await params;
 
     const report = await prisma.verificationReport.findFirst({
-      where: {
-        id: reportId,
-        userId,
-      },
+      where: { id: reportId, userId },
     });
 
     if (!report) {
       return NextResponse.json({ error: 'Report not found' }, { status: 404 });
     }
 
-    const url = await getFileUrl(report.cloudStoragePath, report.isPublic);
-
-    return NextResponse.json({ url });
+    // cloudStoragePath is now a Vercel Blob URL — return it directly
+    return NextResponse.json({ url: report.cloudStoragePath });
   } catch (error) {
     console.error('Download error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get download URL' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get download URL' }, { status: 500 });
   }
 }
